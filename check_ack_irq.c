@@ -10,6 +10,7 @@
 
 #define PARPORT_CONTROL_ENABLE_IRQ	0x10		/* because this isn't defined in the linux/parport.h */
 #define CONSUME_HOUR_FACTOR		3.2		/* 3200 impulses counted per 1 hour means 1 kWt of energy consumed */
+#define FLUSH_INTERVAL 1
 
 #define PP_DEV_NAME "/dev/parport0"
 
@@ -62,6 +63,7 @@ int main() {
 	// set time for the worth case: missed interrupts immediately after start
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
 	printf("Waiting for interrupt on nACK pin state changes...\n");
+	fflush(stdout);
 	while(running) {
 		// Wait for an interrupt
 		FD_ZERO(&rfds);
@@ -77,7 +79,7 @@ int main() {
 				missed_period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;
 			} else {
 				if ( !first_interrupt ) {
-					period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;
+					period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;	// in microseconds
 					if(was_missed) { // there was missed interrupts on previos cycle, need to calculate average values
 						period = (period + missed_period)/(was_missed+1);
 					}
@@ -93,6 +95,10 @@ int main() {
 					printf("(avg): %f, ", impulses/CONSUME_HOUR_FACTOR*3600/elapsed);
 					printf("total consumed: %f", consumed);
 					printf("\n");
+					// flush output if elapsed time more or equal than 1 second
+					if(period>1000000*FLUSH_INTERVAL) {
+						fflush(stdout);
+					}
 				} else {
 					clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);	// correct start time - set it in the moment of first interrupt
 				}
@@ -103,6 +109,7 @@ int main() {
 			impulses++;
 		} else {
 			printf("Caught some signal?\n");
+			fflush(stdout);
 			continue;
 		}
 	}
