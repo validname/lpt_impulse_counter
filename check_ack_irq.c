@@ -7,6 +7,7 @@
 #include <linux/parport.h>
 #include <linux/ppdev.h>
 #include <time.h>
+#include <errno.h>
 
 #define PARPORT_CONTROL_ENABLE_IRQ	0x10		/* because this isn't defined in the linux/parport.h */
 
@@ -19,7 +20,7 @@ void signalHandler(int sig) {
 }
 
 int main() {
-	int ppfd, error;
+	int ppfd;
 	unsigned int mode, missed_interrupts;
 	unsigned char value;
 	fd_set rfds;
@@ -29,26 +30,27 @@ int main() {
 
 	ppfd = open(PP_DEV_NAME, O_RDWR);
 	if(ppfd == -1) {
-		printf("Unable to open parallel port: %s\n", strerror(error));
+		printf("Unable to open parallel port: %s\n", strerror(errno));
 		exit(1);
 	}
 
+	// Instructs the kernel driver to forbid any sharing of the port
+	if(ioctl(ppfd, PPEXCL) == -1)
+		{ printf("Couldn't forbid sharing of parallel port: %s\n", strerror(errno)); close(ppfd); exit(1); }
+
 	// Have to claim the device
-	error = ioctl(ppfd, PPCLAIM);
-	if(error)
-		{ printf("Couldn't claim parallel port: %s\n", strerror(error)); close(ppfd); exit(1); }
+	if(ioctl(ppfd, PPCLAIM) == -1)
+		{ printf("Couldn't claim parallel port: %s\n", strerror(errno)); close(ppfd); exit(1); }
 
 	// set ordinary compatible mode (with control and status register available)
 	mode = IEEE1284_MODE_COMPAT;
-	error = ioctl(ppfd, PPSETMODE, &mode);
-	if(error)
-		{ printf("Couldn't set IEEE1284_MODE_COMPAT mode: %s\n", strerror(error)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
+	if(ioctl(ppfd, PPSETMODE, &mode) == -1)
+		{ printf("Couldn't set IEEE1284_MODE_COMPAT mode: %s\n", strerror(errno)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
 
 	// but enable interrupts
 	value = PARPORT_CONTROL_ENABLE_IRQ;
-	error = ioctl(ppfd, PPWCONTROL, &value);
-	if(error)
-		{ printf("Couldn't enable interrupts for parallel port: %s\n", strerror(error)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
+	if(ioctl(ppfd, PPWCONTROL, &value) == -1)
+		{ printf("Couldn't enable interrupts for parallel port: %s\n", strerror(errno)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
 
 	printf("Waiting for interrupt on nACK pin state changes...\n");
 	while(running) {

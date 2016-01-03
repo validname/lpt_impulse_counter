@@ -7,6 +7,7 @@
 #include <linux/parport.h>
 #include <linux/ppdev.h>
 #include <time.h>
+#include <errno.h>
 
 #define PP_DEV_NAME "/dev/parport0"
 
@@ -19,7 +20,7 @@ void signalHandler(int sig) {
 int main() {
 	unsigned char value, prev_value, first_value;
 	unsigned int mode, changes;
-	int ppfd, error;
+	int ppfd;
 	struct timespec time, prev_time_high, prev_time_low;
 	unsigned long period_low_high, period_high_low;
 	float freq;
@@ -29,20 +30,22 @@ int main() {
 
 	ppfd = open(PP_DEV_NAME, O_RDWR);
 	if(ppfd == -1) {
-		printf("Unable to open parallel port: %s\n", strerror(error));
+		printf("Unable to open parallel port: %s\n", strerror(errno));
 		exit(1);
 	}
 
+	// Instructs the kernel driver to forbid any sharing of the port
+	if(ioctl(ppfd, PPEXCL) == -1)
+		{ printf("Couldn't forbid sharing of parallel port: %s\n", strerror(errno)); close(ppfd); exit(1); }
+
 	// Have to claim the device
-	error = ioctl(ppfd, PPCLAIM);
-	if(error)
-		{ printf("Couldn't claim parallel port: %s\n", strerror(error)); close(ppfd); exit(1); }
+	if(ioctl(ppfd, PPCLAIM) == -1)
+		{ printf("Couldn't claim parallel port: %s\n", strerror(errno)); close(ppfd); exit(1); }
 
 	// set ordinary compatible mode (with control and status register available)
 	mode = IEEE1284_MODE_COMPAT;
-	error = ioctl(ppfd, PPSETMODE, &mode);
-	if(error)
-		{ printf("Couldn't set IEEE1284_MODE_COMPAT mode: %s\n", strerror(error)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
+	if(ioctl(ppfd, PPSETMODE, &mode) == -1)
+		{ printf("Couldn't set IEEE1284_MODE_COMPAT mode: %s\n", strerror(errno)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
 
 	first_value = 1;
 	changes = 0;
@@ -51,9 +54,8 @@ int main() {
 
 	printf("Waiting for nACK pin state changes...\n");
 	while(running) {
-		error = ioctl(ppfd, PPRSTATUS, &value);
-		if ( error )
-			{ printf("Couldn't get parallel port status: %s\n", strerror(error)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
+		if (ioctl(ppfd, PPRSTATUS, &value) == -1)
+			{ printf("Couldn't get parallel port status: %s\n", strerror(errno)); ioctl(ppfd, PPRELEASE); close(ppfd); exit(2); }
 		value = (value&PARPORT_STATUS_ACK)>0;
 		if( !first_value && prev_value!=value ) {
 			clock_gettime(CLOCK_MONOTONIC_RAW, &time);
