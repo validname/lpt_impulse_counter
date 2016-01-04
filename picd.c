@@ -106,11 +106,11 @@ double read_cached_consumed(FILE *file) {
 
 int main() {
 	FILE *statfile, *cachefile;
-	unsigned char value, prev_value, first_interrupt;
+	unsigned char value, prev_value, first_interrupt, need_to_flush;
 	unsigned int mode, missed_interrupts, was_missed;
 	int ppfd, success;
 	fd_set rfds;
-	struct timespec time, prev_time, start_time;
+	struct timespec time, prev_time, start_time, flush_time;
 	unsigned long period, missed_period, impulses, seconds;
 	double freq, consumed, elapsed;
 	unsigned char buffer[1024], buffer2[1024], *ptr;
@@ -193,6 +193,7 @@ int main() {
 
 	// set time for the worth case: missed interrupts immediately after start
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
+	flush_time = start_time;
 	while(running) {
 		// Wait for an interrupt
 		FD_ZERO(&rfds);
@@ -206,17 +207,21 @@ int main() {
 				// missed interrupts = next cycle will contain average values.
 				syslog (LOG_WARNING, "Missed %i interrupts!", missed_interrupts - 1);
 				was_missed = missed_interrupts;
-				missed_period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;
+				missed_period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;	// in microseconds
 			} else {
 				if ( !first_interrupt ) {
-					// get cached 'consumed' value from cache file
-					if(period>1000000*FLUSH_INTERVAL) {
+					need_to_flush = 0;
+					period = ((time.tv_sec - flush_time.tv_sec) + (time.tv_nsec - flush_time.tv_nsec)/1000000000);	// in seconds
+					if(period>FLUSH_INTERVAL) {
+						// get cached 'consumed' value from cache file
+						need_to_flush = 1;
+						flush_time = time;
 						consumed = read_cached_consumed(cachefile);
 					}
-
 					period = (time.tv_sec - prev_time.tv_sec)*1000000 + (time.tv_nsec - prev_time.tv_nsec)/1000;	// in microseconds
 					if(was_missed) { // there was missed interrupts on previos cycle, need to calculate average values
 						period = (period + missed_period)/(was_missed+1);
+						impulses += was_missed+1;
 					}
 					elapsed = (time.tv_sec - start_time.tv_sec) + (time.tv_nsec - start_time.tv_nsec)/1000000000.0;	// seconds from start time (float)
 					seconds = elapsed;	// seconds from start time (integer)
@@ -244,7 +249,7 @@ int main() {
 					fputs(buffer, cachefile);
 
 					// flush output if elapsed time more or equal than 1 second
-					if(period>1000000*FLUSH_INTERVAL) {
+					if(need_to_flush) {
 						fflush(statfile);
 						fflush(cachefile);
 					}
