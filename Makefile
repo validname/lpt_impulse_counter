@@ -3,7 +3,8 @@ CFLAGS=
 LIBS=-lm
 
 PREFIX=/usr/
-BIN=$(PREFIX)/sbin/
+BIN=$(PREFIX)/bin/
+SBIN=$(PREFIX)/sbin/
 DAEMON=picd
 
 %: %.c
@@ -12,13 +13,15 @@ DAEMON=picd
 all: check_ack_irq check_ack_polling write_data_bits $(DAEMON)
 
 install:
-	cp -v -t $(BIN) $(DAEMON)
+	cp -v -t $(SBIN) $(DAEMON)
 	cp -v initd /etc/init.d/$(DAEMON)
 	chmod +x /etc/init.d/$(DAEMON)
+	cp -v -t $(BIN) check_ack_irq check_ack_polling write_data_bits
 
 uninstall:
-	rm $(BIN)/$(DAEMON)
+	rm $(SBIN)/$(DAEMON)
 	rm /etc/init.d/$(DAEMON)
+	rm $(BIN)/check_ack_irq $(BIN)/check_ack_polling $(BIN)/write_data_bits
 
 .PHONY: clean
 
