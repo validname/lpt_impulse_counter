@@ -114,6 +114,7 @@ int main() {
 	unsigned long period, missed_period, impulses, seconds;
 	double freq, consumed, elapsed;
 	unsigned char buffer[1024], buffer2[1024], *ptr;
+	struct stat temp_stat_buf;
 
 	// Set ctrl-c handler
 	signal(SIGHUP, signalHandler);
@@ -134,9 +135,17 @@ int main() {
 	}
 
 	/* Open the cache file */
-	cachefile = fopen(CACHE_FILE, "r+");
+	if( !stat(CACHE_FILE, &temp_stat_buf) ) {
+		// file is exists
+		cachefile = fopen(CACHE_FILE, "r+");
+		syslog(LOG_INFO, "Found existing cache file, will use cached values.");
+		consumed = read_cached_consumed(cachefile);
+	} else {
+		// file is not exists
+		cachefile = fopen(CACHE_FILE, "w+");
+	}
 	if(!cachefile) {
-		syslog(LOG_ERR, "Unable to open stat file '%s': %s", CACHE_FILE, strerror(errno));
+		syslog(LOG_ERR, "Unable to open cache file '%s': %s", CACHE_FILE, strerror(errno));
 		fclose(statfile);
 		closelog();
 		exit(EXIT_FAILURE);
@@ -189,7 +198,6 @@ int main() {
 	impulses = 0;
 	first_interrupt = 1;
 	was_missed = 0;
-	consumed = read_cached_consumed(cachefile);
 
 	// set time for the worth case: missed interrupts immediately after start
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start_time);
